@@ -1,33 +1,55 @@
 const express = require("express");
-const router = express.Router();
-const { createPayment } = require("../services/snippe");
+const fs = require("fs-extra");
+const crypto = require("crypto");
 
-router.post("/payment", async (req, res) => {
+const router = express.Router();
+
+// 🔐 VERIFY SNIPPE SIGNATURE
+function verifySignature(req) {
+  const signature = req.headers["x-snippe-signature"];
+  const secret = process.env.SNIPPE_SIGNING_SECRET;
+
+  const payload = JSON.stringify(req.body);
+
+  const hash = crypto
+    .createHmac("sha256", secret)
+    .update(payload)
+    .digest("hex");
+
+  return signature === hash;
+}
+
+router.post("/snippe", async (req, res) => {
   try {
 
-    // 🔐 MOZELLO SECURITY CHECK
-    const mozelloKey = req.headers["x-mozello-api-key"];
-
-    if (!mozelloKey || mozelloKey !== process.env.MOZELLO_API_KEY) {
-      return res.status(401).json({
-        error: "Unauthorized Mozello request"
-      });
+    // ❌ Reject fake requests
+    if (!verifySignature(req)) {
+      return res.status(401).send("Invalid signature");
     }
 
-    const order = req.body;
+    const event = req.body;
 
-    const payment = await createPayment(order);
+    let orders = await fs.readJson("./data/orders.json").catch(() => ({}));
 
-    return res.json({
-      redirect_url: payment.payment_url
-    });
+    if (event.status === "success") {
+      orders[event.reference] = {
+        status: "PAID",
+        data: event
+      };
+    } else {
+      orders[event.reference] = {
+        status: "FAILED",
+        data: event
+      };
+    }
 
-  } catch (error) {
-    console.error("Mozello payment error:", error);
+    await fs.writeJson("./data/orders.json", orders, { spaces: 2 });
 
-    return res.status(500).json({
-      error: "Payment initiation failed"
-    });
+    res.status(200).send("OK");
+
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(500).send("ERROR");
   }
 });
 
