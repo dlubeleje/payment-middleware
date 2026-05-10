@@ -4,7 +4,38 @@ const crypto = require("crypto");
 
 const router = express.Router();
 
-// 🔐 VERIFY SNIPPE SIGNATURE
+/* =========================
+   🔐 MOZELLO PAYMENT ENTRY
+========================= */
+router.post("/payment", async (req, res) => {
+  try {
+    const mozelloKey = req.headers["x-mozello-api-key"];
+
+    if (!mozelloKey || mozelloKey !== process.env.MOZELLO_API_KEY) {
+      return res.status(401).json({
+        error: "Unauthorized Mozello request"
+      });
+    }
+
+    const order = req.body;
+
+    // 👉 Hapa baadaye uta-connect Snippe real payment
+    return res.json({
+      redirect_url: "https://example.com/payment-page"
+    });
+
+  } catch (err) {
+    console.error("Payment error:", err);
+    return res.status(500).json({
+      error: "Payment failed"
+    });
+  }
+});
+
+
+/* =========================
+   🔐 SNIPPE WEBHOOK
+========================= */
 function verifySignature(req) {
   const signature = req.headers["x-snippe-signature"];
   const secret = process.env.SNIPPE_SIGNING_SECRET;
@@ -21,8 +52,6 @@ function verifySignature(req) {
 
 router.post("/snippe", async (req, res) => {
   try {
-
-    // ❌ Reject fake requests
     if (!verifySignature(req)) {
       return res.status(401).send("Invalid signature");
     }
